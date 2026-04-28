@@ -1,0 +1,24 @@
+# Python virtual environments
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+
+# SQLite Databases 
+*.db
+monolith_data/
+order_data/
+
+# Environment secrets
+.env
+
+# Docker logs
+*.log
+
+# IDE specific files
+.vscode/
+.idea/
+
+# OS specific files
+.DS_Store
