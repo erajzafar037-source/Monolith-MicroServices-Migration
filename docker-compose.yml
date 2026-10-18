@@ -1,21 +1,45 @@
-version: '3.8'
 services:
- 
   gateway:
     build: ./gateway
     ports:
-      - "80:80"
+      - "8080:80"
     volumes:
-      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro 
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - monolith
-      - order-service
+      monolith:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    restart: unless-stopped
 
   monolith:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
-      - FLASK_ENV=development
+      MONOLITH_DATABASE_URI: sqlite:////data/monolith.db
+    volumes:
+      - monolith-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
 
   order-service:
     build: ./order-service
-    
+    environment:
+      ORDER_DATABASE_URI: sqlite:////data/orders.db
+    volumes:
+      - order-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health/live', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  monolith-data:
+  order-data:
