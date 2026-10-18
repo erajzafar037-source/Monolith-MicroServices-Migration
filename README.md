@@ -1,98 +1,92 @@
-# Messy to Micro: Professional DevOps Migration
- 
-This repository tracks the evolution of a software system from a **"Big Ball of Mud" Monolith** to a **Decoupled Microservices Architecture** using the **Strangler Fig Pattern**.
- 
-## Project Architecture
- 
-The system is composed of three primary layers:
- 
-1.  **Nginx API Gateway (Entry Point):** Acts as a reverse proxy, routing traffic to either the legacy monolith or the new microservices based on the URL path.
-2.  **The Monolith (Legacy):** A Flask application where logic is traditionally tangled. It is being "strangled" as features are moved out.
-3.  **Order Service (Microservice):** A standalone Python service with its own isolated database, handling order processing independently.
-## Quick Start (WSL / Linux)
- 
-### 1. Clone & Setup
+# Monolith to Microservices Migration — DevOps Portfolio Project
+
+A small, reproducible demonstration of the **Strangler Fig** migration pattern. An Nginx gateway routes the order workflow to an independently built Flask Order Service, while the monolith remains available for legacy routes.
+
+> This is a learning/portfolio environment, not a production deployment. SQLite is used for local development; PostgreSQL, production secrets management, and Kubernetes are planned follow-up work.
+
+## Architecture
+
+- **Nginx gateway** — exposes the application on host port `8080`.
+- **Legacy monolith** — Flask + SQLAlchemy on internal port `5000`.
+- **Order Service** — separate Flask + SQLAlchemy process on internal port `5001`, with its own dependency manifest and database file.
+- **Named Docker volumes** — preserve local SQLite data across container recreation.
+- **GitHub Actions** — runs API regression tests and validates the Compose configuration.
+
+## Quick start
+
+Requirements: Docker Engine and Docker Compose v2.
+
 ```bash
-git clone <repo-url>
-cd messy-to-micro
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
- 
-### 2. Launch with Docker Compose
-```bash
-# Build and start all services in the background
+git clone https://github.com/erajzafar037-source/Monolith-MicroServices-Migration.git
+cd Monolith-MicroServices-Migration
 docker compose up --build -d
-```
- 
-### 3. Verify the Cluster
-```bash
 docker compose ps
 ```
- 
----
- 
-## 🛠 DevOps Workflows
- 
-### Infrastructure as Code
-The entire environment is defined in `docker-compose.yml`. We use **Docker Networks** for service discovery, allowing Nginx to find services by name (e.g., `http://monolith:5000`) rather than IP.
- 
-### The Strangler Fig Implementation
-We migrated the `/process` logic without changing the frontend's target URL. This was achieved by updating the Gateway configuration (`gateway/nginx.conf`):
- 
-```nginx
-# Requests to /process are now transparently handled by the new Order Service
-location /process {
-    proxy_pass http://order-service:5001/orders;
-}
-```
- 
-### Zero-Downtime Configuration Reload
-To update routing rules without stopping the containers:
+
+The gateway is available at `http://localhost:8080`.
+
+Create an order through the gateway:
+
 ```bash
-docker compose exec gateway nginx -s reload
+curl -i -X POST http://localhost:8080/process \
+  -H 'Content-Type: application/json' \
+  -d '{"user":"Ada","product":"Book"}'
 ```
- 
----
- 
-## Testing the Migration
- 
-Use these `curl` commands from your terminal to verify the routing:
- 
-**Test the legacy-turned-microservice path:**
+
+The gateway maps `/process` to the extracted Order Service. The service returns an order ID and HTTP 201 on success.
+
+Check liveness:
+
 ```bash
-curl -X POST http://localhost/process \
-     -H "Content-Type: application/json" \
-     -d '{"user": "jawad_devops", "product": "mechanical_keyboard"}'
+curl -i http://localhost:8080/health/live
 ```
- 
-**Test the direct microservice endpoint:**
+
+Stop the stack (named volumes are retained):
+
 ```bash
-curl -X POST http://localhost/orders \
-     -H "Content-Type: application/json" \
-     -d '{"user": "jawad_devops", "product": "mechanical_keyboard"}'
+docker compose down
 ```
- 
----
- 
-## Project Structure
-```text
-.
-├── gateway/
-│   ├── Dockerfile          # Nginx image build
-│   └── nginx.conf          # Reverse Proxy & Routing Rules
-├── order-service/
-│   ├── app.py              # Decoupled Order logic
-│   └── Dockerfile          # Python-slim environment
-├── app.py                  # The Monolith (Legacy logic)
-├── docker-compose.yml      # Orchestration & Volumes
-├── .gitignore              # Pro-grade exclusions (venv, db, pycache)
-└── requirements.txt        # Shared dependencies
+
+To intentionally delete local database data as well:
+
+```bash
+docker compose down --volumes
 ```
- 
-## Best Practices Implemented
-* **Database per Service:** No shared database between the monolith and the microservice.
-* **Environment Parity:** Docker ensures the code runs identically in WSL and production.
-* **Non-Root Binding:** Services bind to `0.0.0.0` to allow cross-container communication.
-* **Persistent Volumes:** Database files are mapped to the host to prevent data loss on container restart.
+
+## Run tests locally
+
+```bash
+python -m pip install -r requirements.txt pytest
+pytest -q
+```
+
+## Current improvements
+
+- Fixed the Order Service's explicit dependency file so its image can install requirements.
+- Uses Gunicorn rather than Flask's development server in containers; debug mode is not enabled.
+- Validates JSON request shape and required fields, returns predictable client errors, and rolls back failed database sessions.
+- Adds liveness endpoints, Compose health checks, restart policies, and persistent named volumes.
+- Adds baseline pytest regression tests and a GitHub Actions workflow.
+
+## Known limitations
+
+- SQLite is suitable for this local demonstration, not a claim of production-grade database operations.
+- `/health/live` is a liveness endpoint, not a full dependency-readiness check.
+- There is no authentication, rate limiting, distributed tracing, metrics dashboard, Kubernetes deployment, Terraform, or automated traffic-shift/rollback yet.
+- The CI workflow has been added to the repository, but its remote run result must be checked in the Actions tab; do not treat code committed as proof that the workflow passed.
+
+## Roadmap
+
+See [docs/FUTURE_WORK.md](docs/FUTURE_WORK.md) for the phased plan: data contracts and migrations, supply-chain security, observability/SLOs, Kubernetes + Helm + Terraform, and a measurable migration/rollback rehearsal.
+
+## Migration principles
+
+1. Preserve the client-facing API contract while moving one capability at a time.
+2. Keep data ownership explicit; do not let services write to each other's databases.
+3. Add contract and regression tests before shifting traffic.
+4. Define rollback triggers before rollout and practice the rollback.
+5. Publish latency, throughput, error-rate, and resource measurements only after reproducible tests.
+
+## Attribution
+
+This repository is based on a fork. Preserve upstream attribution and comply with the upstream repository's applicable license before redistributing or reusing its code.
